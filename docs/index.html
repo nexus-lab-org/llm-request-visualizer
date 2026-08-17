@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Visualizer — Claude Code &amp; Codex traffic inspector</title>
+<meta name="description" content="A local logging proxy and browser-based viewer for Claude Code and Codex CLI traffic, grouped into sessions and rendered as structured, diffable exchanges.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2330;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --blue: #58a6ff;
+    --add: #3fb950;
+    --remove: #f85149;
+    --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--bg); }
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+  }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  a:focus-visible, button:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 1.25rem; }
+
+  header {
+    padding: 5rem 0 3.5rem;
+    border-bottom: 1px solid var(--border);
+    background:
+      radial-gradient(circle at 85% 15%, color-mix(in srgb, var(--blue) 8%, transparent), transparent 45%),
+      var(--bg);
+  }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: clamp(2rem, 5.5vw, 2.75rem);
+    letter-spacing: -0.01em;
+    margin: 0 0 0.9rem;
+  }
+  header p.tagline {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+    max-width: 56ch;
+    margin: 0 0 2.25rem;
+  }
+
+  .diffline {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1.1rem;
+    max-width: 520px;
+    margin-bottom: 2rem;
+  }
+  .diffline .rm { color: var(--remove); }
+  .diffline .add { color: var(--add); }
+  .diffline .rm::before { content: "− "; }
+  .diffline .add::before { content: "+ "; }
+
+  .cta { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 0.6rem 1.1rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .btn:hover { text-decoration: none; border-color: var(--blue); color: var(--blue); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #08131f; font-weight: 600; }
+  .btn.primary:hover { background: color-mix(in srgb, var(--blue) 85%, white); color: #08131f; }
+
+  section { padding: 3.5rem 0; border-bottom: 1px solid var(--border); }
+  section:last-of-type { border-bottom: none; }
+  h2 {
+    font-family: var(--mono);
+    font-size: 1.4rem;
+    margin: 0 0 1.5rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 2px solid var(--blue);
+    display: inline-block;
+  }
+  section p { color: var(--text); max-width: 68ch; }
+
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1.25rem;
+    margin-top: 1.5rem;
+  }
+  .feature {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+  }
+  .feature h3 {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    margin: 0 0 0.5rem;
+    color: var(--blue);
+  }
+  .feature p { color: var(--text-dim); font-size: 0.9rem; margin: 0; }
+
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+  }
+  code {
+    font-family: var(--mono);
+    background: var(--surface-2);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.88em;
+  }
+  pre code { background: none; padding: 0; }
+
+  .arch {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    white-space: pre;
+    overflow-x: auto;
+    color: var(--text-dim);
+  }
+  .arch .path { color: var(--blue); }
+
+  footer {
+    padding: 2.5rem 0 4rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  footer a { color: var(--text-dim); }
+  footer a:hover { color: var(--blue); }
+</style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <p class="eyebrow">nexus-lab-org</p>
+      <h1>LLM Visualizer</h1>
+      <p class="tagline">A local logging proxy and browser-based viewer for Claude Code and Codex CLI traffic — every request, response, and tool call, grouped into sessions and rendered as structured, diffable exchanges.</p>
+      <div class="diffline">
+        <div class="rm">console.log('hewwo')</div>
+        <div class="add">console.log('hello')</div>
+      </div>
+      <div class="cta">
+        <a class="btn primary" href="#quick-start">Get started</a>
+        <a class="btn" href="https://github.com/MaxAsif/llm-request-visualizer">View on GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <section id="about">
+    <div class="wrap">
+      <h2>About</h2>
+      <p>Claude Code and Codex CLI talk to their model APIs constantly, but that traffic is invisible by default. LLM Visualizer sits transparently in the request path, logs every exchange — headers, JSON body, and every individual SSE chunk for streaming responses — and renders it as something you'd actually want to read: grouped into sessions, diffable turn-to-turn, with tool calls shown as structured cards instead of raw JSON.</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="wrap">
+      <h2>Features</h2>
+      <div class="features">
+        <div class="feature">
+          <h3>Session grouping</h3>
+          <p>Derived from a native session signal where the CLI provides one, falling back to message-history prefix matching within an idle-timeout window.</p>
+        </div>
+        <div class="feature">
+          <h3>Three views per exchange</h3>
+          <p>Diff (what changed since the last turn), canonical (normalized, human-readable), or raw (actual request/response JSON and SSE chunks).</p>
+        </div>
+        <div class="feature">
+          <h3>Tool calls as cards</h3>
+          <p>A <code>tool_use</code> block renders as a name/ID/arguments table, linked to its matching <code>tool_result</code>, with errors visually flagged.</p>
+        </div>
+        <div class="feature">
+          <h3>Collapsible by design</h3>
+          <p>Every exchange and section within it collapses independently, so a 37-exchange session stays scannable instead of a wall of JSON.</p>
+        </div>
+        <div class="feature">
+          <h3>Provider-agnostic</h3>
+          <p>Anthropic and OpenAI-shaped payloads both normalize into one canonical schema before rendering, diffing, or usage tracking.</p>
+        </div>
+        <div class="feature">
+          <h3>Storage as a port</h3>
+          <p>A small storage interface, currently backed by SQLite, keeps the door open for other backends without rewriting the app.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quick-start">
+    <div class="wrap">
+      <h2>Quick start (Docker)</h2>
+      <pre><code>docker compose up --build</code></pre>
+      <p>Builds and runs both services: the proxy on <code>http://localhost:8317</code> and the viewer UI on <code>http://localhost:5317</code>, sharing a named volume so the SQLite file the proxy writes is the one the viewer reads.</p>
+      <p>Point Claude Code at it:</p>
+      <pre><code>export ANTHROPIC_BASE_URL=http://127.0.0.1:8317
+claude</code></pre>
+      <p>Or Codex CLI:</p>
+      <pre><code>export OPENAI_BASE_URL=http://127.0.0.1:8317
+codex</code></pre>
+      <p>Then open <code>http://localhost:5317</code>. Both can point at the same running proxy instance at once — it forwards based on the detected request shape.</p>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="wrap">
+      <h2>Architecture</h2>
+      <div class="arch"><span class="path">packages/</span>
+├── canonical/   <span style="color:var(--text-dim)"># Provider-agnostic request/response schema + normalizers</span>
+└── storage/     <span style="color:var(--text-dim)"># Storage port + SQLite implementation (exchanges, chunks)</span>
+<span class="path">apps/</span>
+├── proxy/       <span style="color:var(--text-dim)"># Logging reverse proxy in front of the model API</span>
+└── viewer/      <span style="color:var(--text-dim)"># tRPC API + React/Vite UI</span></div>
+      <p style="margin-top:1.25rem;">The proxy forwards every request upstream unmodified and tees a copy to storage on the way through — no change required to how Claude Code or Codex CLI behaves.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap" style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; width:100%;">
+      <span>llm-visualizer · nexus-lab-org</span>
+      <span>
+        <a href="https://github.com/MaxAsif/llm-request-visualizer">GitHub</a> ·
+        <a href="https://github.com/MaxAsif/llm-request-visualizer/issues">Report issues</a>
+      </span>
+    </div>
+  </footer>
+</body>
+</html>
